@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import productRoutes from "./routes/product.route.js";
 import authRoutes from "./routes/auth.route.js";
 import reportRoutes from "./routes/report.route.js";
-
+import client from 'prom-client';
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -37,6 +37,28 @@ app.use("/api/products", productRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/reports", reportRoutes);
 
+// MÉTRICAS
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+const httpRequestCounter = new client.Counter({
+  name: 'http_requests_total',
+  help: 'Cantidad de peticiones HTTP',
+  labelNames: ['method', 'path', 'status'],
+});
+register.registerMetric(httpRequestCounter);
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    httpRequestCounter.labels(req.method, req.path, res.statusCode).inc();
+  });
+  next();
+});
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
 
 // Es importante que este sea el ultimo middleware en la lista
 app.use(errorHandler)
@@ -45,6 +67,9 @@ app.use(errorHandler)
 app.get('/*path', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
 });
+
+
+
 
 // Iniciar servidor
 app.listen(PORT, () => {
